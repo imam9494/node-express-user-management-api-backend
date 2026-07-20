@@ -1,0 +1,59 @@
+const bcrypt = require('bcrypt'); // Tambahkan di bagian ata
+
+
+
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const mysql = require('mysql2/promise');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+const pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT || 3306,
+    waitForConnections: true,
+    connectionLimit: 5,
+    queueLimit: 0
+});
+
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+
+// TEST koneksi database
+app.get('/api/test', async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT 1+1 as result');
+        res.json({ status: 'ok', result: rows[0].result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ENDPOINT LOGIN (cocok untuk form admin@imam.com)
+app.post('/api/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const [rows] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+        if (rows.length === 0) {
+            return res.status(401).json({ message: 'User tidak ditemukan' });
+        }
+        const user = rows[0];
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (isMatch) {
+            res.json({ message: 'Login sukses', user: { id: user.id, email: user.email } });
+        } else {
+            res.status(401).json({ message: 'Password salah' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`✅ Server berjalan di port ${PORT}`);
+});
