@@ -154,7 +154,20 @@ app.put("/api/v1/change-password", verifyToken, async (req, res) => {
         });
     }
 });
+// ==================== ACTIVITY LOG ====================
 
+async function logActivity(userId, name, action, description) {
+    try {
+        await db.query(
+            `INSERT INTO activity_logs
+            (user_id, name, action, description)
+            VALUES (?, ?, ?, ?)`,
+            [userId, name, action, description]
+        );
+    } catch (err) {
+        console.error("Activity Log Error:", err);
+    }
+}
 // ==================== DELETE ====================
 
 app.delete("/api/v1/users/:id", verifyToken, verifyAdmin, async (req, res) => {
@@ -218,7 +231,12 @@ app.post("/api/v1/login", async (req, res) => {
                 expiresIn: "1d",
             }
         );
-
+        await logActivity(
+            user.id,
+            user.name,
+            "LOGIN",
+            `${user.email} berhasil login`
+        );
         res.json({
             message: "Login berhasil",
             token,
