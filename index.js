@@ -782,6 +782,19 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
             payment_method = "cash"
         } = req.body;
 
+
+        const allowedPaymentMethods = [
+            "cash",
+            "debit",
+            "qris",
+            "transfer"
+        ];
+
+        if (!allowedPaymentMethods.includes(payment_method)) {
+            return res.status(400).json({
+                message: "Metode pembayaran tidak valid"
+            });
+        }
         // ==================== VALIDASI ====================
 
         if (!Array.isArray(items) || items.length === 0) {
