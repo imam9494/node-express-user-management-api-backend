@@ -839,6 +839,7 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
                 SELECT
                     id,
                     name,
+                    purchase_price,
                     selling_price,
                     stock,
                     is_active
@@ -869,11 +870,11 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
             const itemSubtotal = price * quantity;
 
             subtotal += itemSubtotal;
-
             transactionItems.push({
                 product_id: product.id,
                 quantity,
                 price,
+                cost_price: Number(product.purchase_price),
                 subtotal: itemSubtotal
             });
         }
@@ -882,7 +883,6 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
 
         const discountAmount = Number(discount);
         const grandTotal = subtotal - discountAmount;
-
         if (grandTotal < 0) {
             throw new Error("Diskon tidak boleh lebih besar dari subtotal");
         }
@@ -943,7 +943,6 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
         // ==================== INSERT ITEMS & KURANGI STOK ====================
 
         for (const item of transactionItems) {
-
             await connection.query(
                 `
                 INSERT INTO transaction_items
@@ -952,15 +951,17 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
                     product_id,
                     quantity,
                     price,
+                    cost_price,
                     subtotal
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
                 `,
                 [
                     transactionId,
                     item.product_id,
                     item.quantity,
                     item.price,
+                    item.cost_price,
                     item.subtotal
                 ]
             );
