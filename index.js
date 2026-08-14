@@ -1014,32 +1014,57 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
 
 
 // ==================== GET TRANSACTIONS ====================
-
 app.get("/api/v1/transactions", verifyToken, async (req, res) => {
     try {
 
         const [rows] = await db.query(`
-            SELECT
-                t.id,
-                t.transaction_code,
-                t.user_id,
-                u.name AS cashier_name,
-                u.email AS cashier_email,
-                t.subtotal,
-                t.discount,
-                t.grand_total,
-                t.paid_amount,
-                t.change_amount,
-                t.payment_method,
-                t.created_at
-            FROM transactions t
-            INNER JOIN users u
-                ON t.user_id = u.id
-            ORDER BY t.created_at DESC
-        `);
+    SELECT
+        t.id,
+        t.transaction_code,
+        t.user_id,
+        u.name AS cashier_name,
+        u.email AS cashier_email,
+        t.subtotal,
+        t.discount,
+        t.grand_total,
+        t.paid_amount,
+        t.change_amount,
+        t.payment_method,
+        t.created_at,
+
+        COALESCE(
+            (
+                SELECT SUM(
+                    ti.quantity * ti.cost_price
+                )
+                FROM transaction_items ti
+                WHERE ti.transaction_id = t.id
+            ),
+            0
+        ) AS total_hpp,
+
+        (
+            t.grand_total -
+            COALESCE(
+                (
+                    SELECT SUM(
+                        ti.quantity * ti.cost_price
+                    )
+                    FROM transaction_items ti
+                    WHERE ti.transaction_id = t.id
+                ),
+                0
+            )
+        ) AS gross_profit
+
+    FROM transactions t
+    INNER JOIN users u
+        ON t.user_id = u.id
+    ORDER BY t.created_at DESC
+
+`);
 
         res.json(rows);
-
     } catch (err) {
         console.error(err);
 
@@ -1048,7 +1073,6 @@ app.get("/api/v1/transactions", verifyToken, async (req, res) => {
         });
     }
 });
-
 
 // ==================== GET TRANSACTION DETAIL ====================
 
@@ -1091,21 +1115,26 @@ app.get("/api/v1/transactions/:id", verifyToken, async (req, res) => {
 
         const [items] = await db.query(
             `
-            SELECT
-                ti.id,
-                ti.product_id,
-                p.code AS product_code,
-                p.name AS product_name,
-                ti.quantity,
-                ti.price,
-                ti.subtotal,
-                p.unit
-            FROM transaction_items ti
-            INNER JOIN products p
-                ON ti.product_id = p.id
-            WHERE ti.transaction_id = ?
-            ORDER BY ti.id ASC
-            `,
+    SELECT
+        ti.id,
+        ti.product_id,
+        p.code AS product_code,
+        p.name AS product_name,
+        ti.quantity,
+        ti.price,
+        ti.cost_price,
+        ti.subtotal,
+        (
+            ti.subtotal -
+            (ti.quantity * ti.cost_price)
+        ) AS item_profit,
+        p.unit
+    FROM transaction_items ti
+    INNER JOIN products p
+        ON ti.product_id = p.id
+    WHERE ti.transaction_id = ?
+    ORDER BY ti.id ASC
+    `,
             [id]
         );
 
