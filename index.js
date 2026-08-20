@@ -42,7 +42,7 @@ app.get("/api/v1/users", verifyToken, async (req, res) => {
 
 
 
-        
+
         const [rows] = await db.query("SELECT * FROM users");
         res.json(rows);
     } catch (err) {
@@ -69,6 +69,7 @@ app.post("/api/v1/users", verifyToken, verifyAdmin, async (req, res) => {
 
         await logActivity(
             req.user.id,
+            req.user.name,
             req.user.email,
             "CREATE",
             `Menambahkan user ${name} (${email})`
@@ -101,15 +102,16 @@ app.put("/api/v1/users/:id", verifyToken, verifyAdmin, async (req, res) => {
         if (password && !password.startsWith("$2")) {
             hashedPassword = await bcrypt.hash(password, 10);
         }
-
         await db.query(
             "UPDATE users SET name=?, kategori=?,email=?, password=?, role=? WHERE id=?",
             [name, kategori, email, hashedPassword, role, id]
         );
-        
+
+
 
         await logActivity(
             req.user.id,
+            req.user.name,
             req.user.email,
             "UPDATE",
             `Mengubah user ${name} (${email}) menjadi role ${role}`
@@ -172,6 +174,7 @@ app.put("/api/v1/change-password", verifyToken, async (req, res) => {
 
         await logActivity(
             req.user.id,
+            req.user.name,
             req.user.email,
             "CHANGE_PASSWORD",
             `${req.user.email} berhasil mengubah password`
@@ -192,19 +195,20 @@ app.put("/api/v1/change-password", verifyToken, async (req, res) => {
 
 
 
-async function logActivity(userId, name, action, description) {
+async function logActivity(userId, name, email, action, description) {
     try {
 
         console.log("LOG ACTIVITY:", {
             userId,
             name,
+            email,
             action,
             description,
         });
 
         await db.query(
-            "INSERT INTO activity_logs (user_id,name,action,description) VALUES (?,?,?,?)",
-            [userId, name, action, description]
+            "INSERT INTO activity_logs (user_id,name,email,action,description) VALUES (?,?,?,?,?)",
+            [userId, name,email, action, description]
         );
 
         console.log("Activity berhasil disimpan");
@@ -243,6 +247,7 @@ app.delete("/api/v1/users/:id", verifyToken, verifyAdmin, async (req, res) => {
         // Simpan activity log
         await logActivity(
             req.user.id,
+            req.user.name,
             req.user.email,
             "DELETE",
             `Menghapus user ${deletedUser.name} (${deletedUser.email})`
@@ -309,6 +314,7 @@ app.post("/api/v1/login", async (req, res) => {
         await logActivity(
             user.id,
             user.name,
+            user.email,
             "LOGIN",
             `${user.email} berhasil login`
         );
@@ -333,6 +339,7 @@ app.post("/api/v1/logout", verifyToken, async (req, res) => {
 
         await logActivity(
             req.user.id,
+            req.user.name,
             req.user.email,
             "LOGOUT",
             `${req.user.email} berhasil logout`
@@ -770,7 +777,7 @@ app.delete("/api/v1/categories/:id", verifyToken, verifyAdmin, async (req, res) 
 // ==================== CREATE TRANSACTION ====================
 
 app.post("/api/v1/transactions", verifyToken, async (req, res) => {
-    
+
     console.log("=== POST TRANSACTIONS MASUK ===");
     console.log("BODY TRANSAKSI =", req.body);
     console.log("USER =", req.user);
@@ -909,9 +916,9 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
 
         // ==================== INSERT TRANSACTION ====================
 
-       
 
-       
+
+
 
         const [transactionResult] = await connection.query(
             `
@@ -940,7 +947,7 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
             ]
         );
 
-        
+
 
         const transactionId = transactionResult.insertId;
 
@@ -987,6 +994,15 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
         console.log("=== SEBELUM COMMIT ===");
         await connection.commit();
         console.log("=== COMMIT BERHASIL ===");
+
+        await logActivity(
+            req.user.id,
+            req.user.name,
+            req.user.email,
+            "CREATE",
+            `Membuat transaksi ${transactionCode} dengan total Rp${grandTotal.toLocaleString("id-ID")}`
+        );
+
         res.status(201).json({
             message: "Transaksi berhasil",
             transactionId,
