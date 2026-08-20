@@ -195,7 +195,14 @@ app.put("/api/v1/change-password", verifyToken, async (req, res) => {
 
 
 
-async function logActivity(userId, name, email, action, description) {
+async function logActivity(
+    userId,
+    name,
+    email,
+    action,
+    description,
+    transactionCode = null
+) {
     try {
 
         console.log("LOG ACTIVITY:", {
@@ -204,11 +211,12 @@ async function logActivity(userId, name, email, action, description) {
             email,
             action,
             description,
+            transactionCode,
         });
 
         await db.query(
-            "INSERT INTO activity_logs (user_id,name,email,action,description) VALUES (?,?,?,?,?)",
-            [userId, name,email, action, description]
+            "INSERT INTO activity_logs (user_id,name,email,action,transaction_code,description) VALUES (?,?,?,?,?,?)",
+            [userId, name, email, action, transactionCode, description]
         );
 
         console.log("Activity berhasil disimpan");
@@ -1000,7 +1008,8 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
             req.user.name,
             req.user.email,
             "CREATE",
-            `Membuat transaksi ${transactionCode} dengan total Rp${grandTotal.toLocaleString("id-ID")}`
+            `Membuat transaksi ${transactionCode} dengan total Rp${grandTotal.toLocaleString("id-ID")}`,
+            transactionCode
         );
 
         res.status(201).json({
