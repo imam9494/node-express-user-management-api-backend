@@ -599,18 +599,33 @@ app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
 
                 SUM(ti.quantity) AS total_quantity,
 
-                SUM(ti.subtotal) AS total_sales,
+                SUM(
+                    ti.subtotal *
+                    (
+                        t.grand_total /
+                        NULLIF(t.subtotal, 0)
+                    )
+                ) AS total_sales,
 
                 SUM(
                     ti.quantity * ti.cost_price
                 ) AS total_hpp,
 
                 SUM(
-                    ti.subtotal -
+                    (
+                        ti.subtotal *
+                        (
+                            t.grand_total /
+                            NULLIF(t.subtotal, 0)
+                        )
+                    ) -
                     (ti.quantity * ti.cost_price)
                 ) AS gross_profit
 
             FROM transaction_items ti
+
+            INNER JOIN transactions t
+                ON t.id = ti.transaction_id
 
             INNER JOIN products p
                 ON p.id = ti.product_id
@@ -636,7 +651,6 @@ app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
         });
     }
 });
-
 
 
 // ==================== GET CATEGORIES ====================
