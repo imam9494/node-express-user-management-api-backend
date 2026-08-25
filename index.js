@@ -586,6 +586,59 @@ app.delete("/api/v1/products/:id", verifyToken, verifyAdmin, async (req, res) =>
     }
 });
 
+// ==================== GET BEST SELLING PRODUCTS ====================
+
+app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT
+                p.id AS product_id,
+                p.code,
+                p.name AS product_name,
+                p.unit,
+
+                SUM(ti.quantity) AS total_quantity,
+
+                SUM(ti.subtotal) AS total_sales,
+
+                SUM(
+                    ti.quantity * ti.cost_price
+                ) AS total_hpp,
+
+                SUM(
+                    ti.subtotal -
+                    (ti.quantity * ti.cost_price)
+                ) AS gross_profit
+
+            FROM transaction_items ti
+
+            INNER JOIN products p
+                ON p.id = ti.product_id
+
+            GROUP BY
+                p.id,
+                p.code,
+                p.name,
+                p.unit
+
+            ORDER BY total_quantity DESC
+
+            LIMIT 10
+        `);
+
+        res.json(rows);
+
+    } catch (err) {
+        console.error("BEST SELLING ERROR:", err);
+
+        res.status(500).json({
+            message: err.message
+        });
+    }
+});
+
+
+
 // ==================== GET CATEGORIES ====================
 
 app.get("/api/v1/categories", verifyToken, async (req, res) => {
