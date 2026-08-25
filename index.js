@@ -951,7 +951,17 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
             });
         }
 
-        // ==================== HITUNG TOTAL ====================
+
+// ==================== HITUNG TOTAL ====================
+
+const totalHpp = transactionItems.reduce(
+    (total, item) =>
+        total + (item.quantity * item.cost_price),
+    0
+);
+
+
+
 
         const discountAmount = Number(discount);
         const grandTotal = subtotal - discountAmount;
@@ -990,11 +1000,12 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
         subtotal,
         discount,
         grand_total,
+        total_hpp,
         paid_amount,
         change_amount,
         payment_method
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
             [
                 transactionCode,
@@ -1002,6 +1013,7 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
                 subtotal,
                 discountAmount,
                 grandTotal,
+                totalHpp,
                 paidAmount,
                 changeAmount,
                 payment_method
