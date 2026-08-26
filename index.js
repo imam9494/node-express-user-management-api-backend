@@ -1181,6 +1181,35 @@ app.get("/api/v1/transactions", verifyToken, async (req, res) => {
         });
     }
 });
+// ==================== GET DASHBOARD SUMMARY ====================
+
+app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT
+                COUNT(*) AS total_transactions,
+                COALESCE(SUM(t.grand_total), 0) AS total_omzet,
+                COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
+                COALESCE(
+                    SUM(t.grand_total - t.total_hpp),
+                    0
+                ) AS gross_profit
+            FROM transactions t
+        `);
+
+        res.json(rows[0]);
+    } catch (err) {
+        console.error(err);
+
+        res.status(500).json({
+            message: err.message
+        });
+    }
+});
+
+
+
+
 
 // ==================== GET TRANSACTION DETAIL ====================
 
