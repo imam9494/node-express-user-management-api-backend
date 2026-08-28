@@ -1250,6 +1250,54 @@ app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
 
 
 
+// ==================== GET DASHBOARD SALES CHART ====================
+
+app.get("/api/v1/dashboard/sales-chart", verifyToken, async (req, res) => {
+    try {
+        const { period = "all" } = req.query;
+
+        let dateCondition = "";
+
+        if (period === "today") {
+            dateCondition = "WHERE DATE(t.created_at) = CURDATE()";
+        } else if (period === "week") {
+            dateCondition = "WHERE YEARWEEK(t.created_at, 1) = YEARWEEK(CURDATE(), 1)";
+        } else if (period === "month") {
+            dateCondition = `
+                WHERE YEAR(t.created_at) = YEAR(CURDATE())
+                AND MONTH(t.created_at) = MONTH(CURDATE())
+            `;
+        } else if (period !== "all") {
+            return res.status(400).json({
+                message: "Period tidak valid"
+            });
+        }
+
+        const [rows] = await db.query(`
+            SELECT
+                DATE_FORMAT(t.created_at, '%Y-%m-%d') AS date,
+                COALESCE(SUM(t.grand_total), 0) AS total_omzet,
+                COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
+                COALESCE(
+                    SUM(t.grand_total - t.total_hpp),
+                    0
+                ) AS gross_profit
+            FROM transactions t
+            ${dateCondition}
+            GROUP BY DATE_FORMAT(t.created_at, '%Y-%m-%d')
+            ORDER BY DATE_FORMAT(t.created_at, '%Y-%m-%d') ASC
+        `);
+
+        res.json(rows);
+    } catch (err) {
+        console.error("SALES CHART ERROR:", err);
+
+        res.status(500).json({
+            message: err.message
+        });
+    }
+});
+
 // ==================== GET TRANSACTION DETAIL ====================
 
 app.get("/api/v1/transactions/:id", verifyToken, async (req, res) => {
