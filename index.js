@@ -590,9 +590,10 @@ app.delete("/api/v1/products/:id", verifyToken, verifyAdmin, async (req, res) =>
 
 app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
     try {
-        const { period = "all" } = req.query;
+        const { period = "all", date_from, date_to } = req.query;
 
         let dateCondition = "";
+        let queryParams = [];
 
         if (period === "today") {
             dateCondition = "WHERE DATE(t.created_at) = CURDATE()";
@@ -603,12 +604,39 @@ app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
                 WHERE YEAR(t.created_at) = YEAR(CURDATE())
                 AND MONTH(t.created_at) = MONTH(CURDATE())
             `;
+
+        } else if (period === "custom") {
+            if (!date_from || !date_to) {
+                return res.status(400).json({
+                    message: "date_from dan date_to wajib diisi"
+                });
+            }
+
+            if (
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_from) ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_to)
+            ) {
+                return res.status(400).json({
+                    message: "Format tanggal harus YYYY-MM-DD"
+                });
+            }
+
+            if (date_from > date_to) {
+                return res.status(400).json({
+                    message: "date_from tidak boleh lebih besar dari date_to"
+                });
+            }
+
+            dateCondition = `
+        WHERE DATE(t.created_at) BETWEEN ? AND ?
+    `;
+
+            queryParams = [date_from, date_to];
         } else if (period !== "all") {
             return res.status(400).json({
                 message: "Period tidak valid"
             });
         }
-
         const [rows] = await db.query(`
             SELECT
                 p.id AS product_id,
@@ -660,7 +688,9 @@ app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
             ORDER BY total_quantity DESC
 
             LIMIT 10
-        `);
+
+
+        `, queryParams);
 
         res.json(rows);
 
@@ -1205,9 +1235,10 @@ app.get("/api/v1/transactions", verifyToken, async (req, res) => {
 
 app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
     try {
-        const { period = "all" } = req.query;
+        const { period = "all", date_from, date_to } = req.query;
 
         let dateCondition = "";
+        let queryParams = [];
 
         if (period === "today") {
             dateCondition = "WHERE DATE(t.created_at) = CURDATE()";
@@ -1218,6 +1249,34 @@ app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
                 WHERE YEAR(t.created_at) = YEAR(CURDATE())
                 AND MONTH(t.created_at) = MONTH(CURDATE())
             `;
+
+        } else if (period === "custom") {
+            if (!date_from || !date_to) {
+                return res.status(400).json({
+                    message: "date_from dan date_to wajib diisi"
+                });
+            }
+
+            if (
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_from) ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_to)
+            ) {
+                return res.status(400).json({
+                    message: "Format tanggal harus YYYY-MM-DD"
+                });
+            }
+
+            if (date_from > date_to) {
+                return res.status(400).json({
+                    message: "date_from tidak boleh lebih besar dari date_to"
+                });
+            }
+
+            dateCondition = "WHERE DATE(t.created_at) BETWEEN ? AND ?";
+            queryParams = [date_from, date_to];
+
+
+
         } else if (period !== "all") {
             return res.status(400).json({
                 message: "Period tidak valid"
@@ -1234,7 +1293,7 @@ app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
                 ) AS gross_profit
             FROM transactions t
             ${dateCondition}
-        `);
+        `, queryParams);
 
         res.json(rows[0]);
     } catch (err) {
@@ -1254,9 +1313,9 @@ app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
 
 app.get("/api/v1/dashboard/sales-chart", verifyToken, async (req, res) => {
     try {
-        const { period = "all" } = req.query;
-
+        const { period = "all", date_from, date_to } = req.query;
         let dateCondition = "";
+        let queryParams = [];
 
         if (period === "today") {
             dateCondition = "WHERE DATE(t.created_at) = CURDATE()";
@@ -1267,6 +1326,32 @@ app.get("/api/v1/dashboard/sales-chart", verifyToken, async (req, res) => {
                 WHERE YEAR(t.created_at) = YEAR(CURDATE())
                 AND MONTH(t.created_at) = MONTH(CURDATE())
             `;
+        } else if (period === "custom") {
+            if (!date_from || !date_to) {
+                return res.status(400).json({
+                    message: "date_from dan date_to wajib diisi"
+                });
+            }
+
+            if (
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_from) ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_to)
+            ) {
+                return res.status(400).json({
+                    message: "Format tanggal harus YYYY-MM-DD"
+                });
+            }
+
+            if (date_from > date_to) {
+                return res.status(400).json({
+                    message: "date_from tidak boleh lebih besar dari date_to"
+                    });
+
+
+            }
+
+            dateCondition = "WHERE DATE(t.created_at) BETWEEN ? AND ?";
+            queryParams = [date_from, date_to];
         } else if (period !== "all") {
             return res.status(400).json({
                 message: "Period tidak valid"
@@ -1286,7 +1371,7 @@ app.get("/api/v1/dashboard/sales-chart", verifyToken, async (req, res) => {
             ${dateCondition}
             GROUP BY DATE_FORMAT(t.created_at, '%Y-%m-%d')
             ORDER BY DATE_FORMAT(t.created_at, '%Y-%m-%d') ASC
-        `);
+        `, queryParams);
 
         res.json(rows);
     } catch (err) {
