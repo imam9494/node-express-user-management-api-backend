@@ -1,7 +1,6 @@
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = "imam123456";
-
+const JWT_SECRET = process.env.JWT_SECRET;
 function verifyToken(req, res, next) {
 
   const authHeader = req.headers.authorization;

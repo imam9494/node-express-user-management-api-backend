@@ -27,7 +27,8 @@ const jwt = require("jsonwebtoken");
 
 const app = express();
 
-const JWT_SECRET = "imam123456";
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
 app.use(cors());
 app.use(express.json());
@@ -304,6 +305,16 @@ app.post("/api/v1/login", async (req, res) => {
             });
         }
 
+        const refreshToken = jwt.sign(
+            {
+                id: user.id,
+            },
+            JWT_REFRESH_SECRET,
+            {
+                expiresIn: "7d",
+            }
+        );
+
         const token = jwt.sign(
             {
                 id: user.id,
@@ -311,8 +322,6 @@ app.post("/api/v1/login", async (req, res) => {
                 email: user.email,
                 role: user.role,
             },
-
-
             JWT_SECRET,
             {
                 expiresIn: "1d",
@@ -326,10 +335,14 @@ app.post("/api/v1/login", async (req, res) => {
             "LOGIN",
             `${user.email} berhasil login`
         );
+        const safeUser = { ...user };
+        delete safeUser.password;
         res.json({
             message: "Login berhasil",
             token,
-            user,
+            refreshToken,
+            user: safeUser,
+
         });
 
     } catch (err) {
@@ -340,6 +353,69 @@ app.post("/api/v1/login", async (req, res) => {
         });
     }
 });
+
+// ==================== REFRESH TOKEN ====================
+
+app.post("/api/v1/refresh", async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+
+        if (!refreshToken) {
+            return res.status(401).json({
+                message: "Refresh token tidak ditemukan",
+            });
+        }
+
+        const decoded = jwt.verify(
+            refreshToken,
+            JWT_REFRESH_SECRET
+        );
+
+        const [rows] = await db.query(
+            "SELECT id, name, email, role FROM users WHERE id=?",
+            [decoded.id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(401).json({
+                message: "User tidak ditemukan",
+            });
+        }
+
+        const user = rows[0];
+
+        const token = jwt.sign(
+            {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+            },
+            JWT_SECRET,
+            {
+                expiresIn: "1d",
+            }
+        );
+
+        res.json({
+            accessToken: token,
+        });
+
+    } catch (err) {
+        if (err.name === "TokenExpiredError") {
+            return res.status(401).json({
+                message: "Refresh token expired",
+            });
+        }
+
+        return res.status(401).json({
+            message: "Refresh token tidak valid",
+        });
+    }
+});
+
+
+
 // ==================== LOGOUT ====================
 
 app.post("/api/v1/logout", verifyToken, async (req, res) => {
@@ -1231,6 +1307,140 @@ app.get("/api/v1/transactions", verifyToken, async (req, res) => {
         });
     }
 });
+
+// ==================== GET SALES REPORT ====================
+app.get("/api/v1/reports/sales", verifyToken, async (req, res) => {
+    try {
+        const {
+            date_from,
+            date_to,
+            payment_method,
+            cashier_id
+        } = req.query;
+
+        let where = [];
+        let params = [];
+
+        // Filter tanggal
+        if (date_from || date_to) {
+            if (!date_from || !date_to) {
+                return res.status(400).json({
+                    message: "date_from dan date_to harus diisi bersama"
+                });
+            }
+
+            if (
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_from) ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(date_to)
+            ) {
+                return res.status(400).json({
+                    message: "Format tanggal harus YYYY-MM-DD"
+                });
+            }
+
+            if (date_from > date_to) {
+                return res.status(400).json({
+                    message: "date_from tidak boleh lebih besar dari date_to"
+                });
+            }
+
+            where.push("DATE(t.created_at) BETWEEN ? AND ?");
+            params.push(date_from, date_to);
+        }
+
+        // Filter metode pembayaran
+        if (payment_method) {
+            const allowedPaymentMethods = [
+                "cash",
+                "debit",
+                "qris",
+                "transfer"
+            ];
+
+            if (!allowedPaymentMethods.includes(payment_method)) {
+                return res.status(400).json({
+                    message: "payment_method tidak valid"
+                });
+            }
+
+            where.push("t.payment_method = ?");
+            params.push(payment_method);
+        }
+
+        // Filter kasir
+        if (cashier_id) {
+            if (!/^\d+$/.test(cashier_id)) {
+                return res.status(400).json({
+                    message: "cashier_id tidak valid"
+                });
+            }
+
+            where.push("t.user_id = ?");
+            params.push(Number(cashier_id));
+        }
+
+        const whereClause = where.length
+            ? `WHERE ${where.join(" AND ")}`
+            : "";
+
+        // Ringkasan laporan
+        const [summaryRows] = await db.query(
+            `
+            SELECT
+                COUNT(*) AS total_transactions,
+                COALESCE(SUM(t.grand_total), 0) AS total_omzet,
+                COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
+                COALESCE(
+                    SUM(t.grand_total - t.total_hpp),
+                    0
+                ) AS gross_profit
+            FROM transactions t
+            ${whereClause}
+            `,
+            params
+        );
+
+        // Detail laporan
+        const [detailRows] = await db.query(
+            `
+            SELECT
+                t.id,
+                t.transaction_code,
+                t.user_id,
+                u.name AS cashier_name,
+                u.email AS cashier_email,
+                t.subtotal,
+                t.discount,
+                t.grand_total,
+                t.total_hpp,
+                (t.grand_total - t.total_hpp) AS gross_profit,
+                t.paid_amount,
+                t.change_amount,
+                t.payment_method,
+                t.created_at
+            FROM transactions t
+            INNER JOIN users u
+                ON t.user_id = u.id
+            ${whereClause}
+            ORDER BY t.created_at DESC
+            `,
+            params
+        );
+
+        res.json({
+            summary: summaryRows[0],
+            data: detailRows
+        });
+
+    } catch (err) {
+        console.error("SALES REPORT ERROR:", err);
+
+        res.status(500).json({
+            message: err.message
+        });
+    }
+});
+
 // ==================== GET DASHBOARD SUMMARY ====================
 
 app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
