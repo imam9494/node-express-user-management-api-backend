@@ -779,6 +779,52 @@ app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
     }
 });
 
+// ==================== GET LOW STOCK PRODUCTS ====================
+
+app.get("/api/v1/products/low-stock", verifyToken, async (req, res) => {
+    try {
+        const threshold = Number(req.query.threshold ?? 5);
+
+        if (!Number.isFinite(threshold) || threshold < 0) {
+            return res.status(400).json({
+                message: "threshold harus berupa angka >= 0"
+            });
+        }
+
+        const [rows] = await db.query(
+            `
+            SELECT
+                id,
+                code,
+                name,
+                stock,
+                unit
+            FROM products
+            WHERE is_active = 1
+              AND stock <= ?
+            ORDER BY stock ASC, name ASC
+            `,
+            [threshold]
+        );
+
+        res.json({
+            threshold,
+            data: rows
+        });
+
+    } catch (err) {
+        console.error("LOW STOCK ERROR:", err);
+
+        res.status(500).json({
+            message: err.message
+        });
+    }
+});
+
+
+
+
+
 // ==================== GET CATEGORIES ====================
 
 app.get("/api/v1/categories", verifyToken, async (req, res) => {
@@ -1521,21 +1567,48 @@ app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
 
 // ==================== GET DASHBOARD SALES CHART ====================
 
+// ==================== GET SALES CHART ====================
+
 app.get("/api/v1/dashboard/sales-chart", verifyToken, async (req, res) => {
     try {
         const { period = "all", date_from, date_to } = req.query;
-        let dateCondition = "";
-        let queryParams = [];
+
+        let startDate;
+        let endDate;
+        let params = [];
+
+        // ==================== TENTUKAN RENTANG ====================
+
+        if (period === "all") {
+            const [rows] = await db.query(`
+                SELECT
+                    DATE(t.created_at) AS date,
+                    COALESCE(SUM(t.grand_total), 0) AS total_omzet,
+                    COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
+                    COALESCE(
+                        SUM(t.grand_total - t.total_hpp),
+                        0
+                    ) AS gross_profit
+                FROM transactions t
+                GROUP BY DATE(t.created_at)
+                ORDER BY DATE(t.created_at) ASC
+            `);
+
+            return res.json(rows);
+        }
 
         if (period === "today") {
-            dateCondition = "WHERE DATE(t.created_at) = CURDATE()";
+            startDate = "CURDATE()";
+            endDate = "CURDATE()";
+
         } else if (period === "week") {
-            dateCondition = "WHERE YEARWEEK(t.created_at, 1) = YEARWEEK(CURDATE(), 1)";
+            startDate = "DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)";
+            endDate = "DATE_ADD(CURDATE(), INTERVAL (6 - WEEKDAY(CURDATE())) DAY)";
+
         } else if (period === "month") {
-            dateCondition = `
-                WHERE YEAR(t.created_at) = YEAR(CURDATE())
-                AND MONTH(t.created_at) = MONTH(CURDATE())
-            `;
+            startDate = "DATE_FORMAT(CURDATE(), '%Y-%m-01')";
+            endDate = "LAST_DAY(CURDATE())";
+
         } else if (period === "custom") {
             if (!date_from || !date_to) {
                 return res.status(400).json({
@@ -1555,35 +1628,49 @@ app.get("/api/v1/dashboard/sales-chart", verifyToken, async (req, res) => {
             if (date_from > date_to) {
                 return res.status(400).json({
                     message: "date_from tidak boleh lebih besar dari date_to"
-                    });
-
-
+                });
             }
 
-            dateCondition = "WHERE DATE(t.created_at) BETWEEN ? AND ?";
-            queryParams = [date_from, date_to];
-        } else if (period !== "all") {
+            startDate = "?";
+            endDate = "?";
+            params = [date_from, date_to];
+
+        } else {
             return res.status(400).json({
                 message: "Period tidak valid"
             });
         }
 
+        // ==================== DATE SERIES ====================
+
         const [rows] = await db.query(`
+            WITH RECURSIVE dates AS (
+                SELECT DATE(${startDate}) AS date
+
+                UNION ALL
+
+                SELECT DATE_ADD(date, INTERVAL 1 DAY)
+                FROM dates
+                WHERE date < DATE(${endDate})
+            )
+
             SELECT
-                DATE_FORMAT(t.created_at, '%Y-%m-%d') AS date,
+                DATE_FORMAT(dates.date, '%Y-%m-%d') AS date,
                 COALESCE(SUM(t.grand_total), 0) AS total_omzet,
                 COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
                 COALESCE(
                     SUM(t.grand_total - t.total_hpp),
                     0
                 ) AS gross_profit
-            FROM transactions t
-            ${dateCondition}
-            GROUP BY DATE_FORMAT(t.created_at, '%Y-%m-%d')
-            ORDER BY DATE_FORMAT(t.created_at, '%Y-%m-%d') ASC
-        `, queryParams);
+            FROM dates
+            LEFT JOIN transactions t
+                ON DATE(t.created_at) = dates.date
+            GROUP BY dates.date
+            ORDER BY dates.date ASC
+        `, params);
 
         res.json(rows);
+
     } catch (err) {
         console.error("SALES CHART ERROR:", err);
 
