@@ -44,6 +44,7 @@ app.get("/api/v1/users", verifyToken, async (req, res) => {
 
 
 
+
         const [rows] = await db.query("SELECT * FROM users");
         res.json(rows);
     } catch (err) {
@@ -560,7 +561,6 @@ app.post("/api/v1/products", verifyToken, verifyAdmin, async (req, res) => {
 });
 
 // ==================== UPDATE PRODUCT ====================
-
 app.put("/api/v1/products/:id", verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
@@ -666,11 +666,20 @@ app.delete("/api/v1/products/:id", verifyToken, verifyAdmin, async (req, res) =>
 
 app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
     try {
-        const { period = "all", date_from, date_to } = req.query;
+        const {
+            period = "all",
+            date_from,
+            date_to,
+            sort_by = "quantity"
+        } = req.query;
 
         let dateCondition = "";
         let queryParams = [];
-
+        if (!["quantity", "omzet"].includes(sort_by)) {
+            return res.status(400).json({
+                message: "sort_by harus quantity atau omzet"
+            });
+        }
         if (period === "today") {
             dateCondition = "WHERE DATE(t.created_at) = CURDATE()";
         } else if (period === "week") {
@@ -722,48 +731,39 @@ app.get("/api/v1/products/best-selling", verifyToken, async (req, res) => {
 
                 SUM(ti.quantity) AS total_quantity,
 
-                SUM(
-                    ti.subtotal *
-                    (
-                        t.grand_total /
-                        NULLIF(t.subtotal, 0)
-                    )
-                ) AS total_sales,
+    SUM(
+        ti.subtotal - ti.discount
+    ) AS total_sales,
 
-                SUM(
-                    ti.quantity * ti.cost_price
-                ) AS total_hpp,
+    SUM(
+        ti.quantity * ti.cost_price
+    ) AS total_hpp,
 
-                SUM(
-                    (
-                        ti.subtotal *
-                        (
-                            t.grand_total /
-                            NULLIF(t.subtotal, 0)
-                        )
-                    ) -
-                    (ti.quantity * ti.cost_price)
-                ) AS gross_profit
+    SUM(
+        (ti.subtotal - ti.discount) -
+        (ti.quantity * ti.cost_price)
+    ) AS gross_profit
 
-            FROM transaction_items ti
+FROM transaction_items ti
 
-            INNER JOIN transactions t
-                ON t.id = ti.transaction_id
+INNER JOIN transactions t
+    ON t.id = ti.transaction_id
 
-            INNER JOIN products p
-                ON p.id = ti.product_id
+INNER JOIN products p
+    ON p.id = ti.product_id
 
-            ${dateCondition}
+${dateCondition}
 
-            GROUP BY
-                p.id,
-                p.code,
-                p.name,
-                p.unit
+GROUP BY
+    p.id,
+    p.code,
+    p.name,
+    p.unit
 
-            ORDER BY total_quantity DESC
+ORDER BY ${sort_by === "omzet" ? "total_sales" : "total_quantity"} DESC
 
-            LIMIT 10
+LIMIT 10
+
 
 
         `, queryParams);
@@ -1127,12 +1127,27 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
             const price = Number(product.selling_price);
             const itemSubtotal = price * quantity;
 
+            const itemDiscount = Number(item.discount) || 0;
+
+            if (itemDiscount < 0) {
+                throw new Error(
+                    `Diskon produk ${product.name} tidak boleh negatif`
+                );
+            }
+
+            if (itemDiscount > itemSubtotal) {
+                throw new Error(
+                    `Diskon produk ${product.name} tidak boleh lebih besar dari subtotal item`
+                );
+            }
+
             subtotal += itemSubtotal;
             transactionItems.push({
                 product_id: product.id,
                 quantity,
                 price,
                 cost_price: Number(product.purchase_price),
+                discount: itemDiscount,
                 subtotal: itemSubtotal
             });
         }
@@ -1149,7 +1164,11 @@ const totalHpp = transactionItems.reduce(
 
 
 
-        const discountAmount = Number(discount);
+        const discountAmount = transactionItems.reduce(
+            (total, item) => total + item.discount,
+            0
+        );
+
         const grandTotal = subtotal - discountAmount;
         if (grandTotal < 0) {
             throw new Error("Diskon tidak boleh lebih besar dari subtotal");
@@ -1222,9 +1241,10 @@ const totalHpp = transactionItems.reduce(
                     quantity,
                     price,
                     cost_price,
+                    discount,
                     subtotal
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 `,
                 [
                     transactionId,
@@ -1232,6 +1252,7 @@ const totalHpp = transactionItems.reduce(
                     item.quantity,
                     item.price,
                     item.cost_price,
+                    item.discount,
                     item.subtotal
                 ]
             );
@@ -1530,6 +1551,7 @@ app.get("/api/v1/dashboard/summary", verifyToken, async (req, res) => {
 
             dateCondition = "WHERE DATE(t.created_at) BETWEEN ? AND ?";
             queryParams = [date_from, date_to];
+
 
 
 
