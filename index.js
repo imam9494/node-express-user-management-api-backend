@@ -1455,6 +1455,8 @@ app.get("/api/v1/reports/sales", verifyToken, async (req, res) => {
             `
             SELECT
                 COUNT(*) AS total_transactions,
+                COALESCE(SUM(t.subtotal), 0) AS total_subtotal,
+                COALESCE(SUM(t.discount), 0) AS total_discount,
                 COALESCE(SUM(t.grand_total), 0) AS total_omzet,
                 COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
                 COALESCE(
