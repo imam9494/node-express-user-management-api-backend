@@ -1753,9 +1753,10 @@ app.get("/api/v1/transactions/:id", verifyToken, async (req, res) => {
         ti.quantity,
         ti.price,
         ti.cost_price,
+        ti.discount,
         ti.subtotal,
         (
-            ti.subtotal -
+            (ti.subtotal - ti.discount) -
             (ti.quantity * ti.cost_price)
         ) AS item_profit,
         p.unit
