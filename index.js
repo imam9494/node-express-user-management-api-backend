@@ -1044,6 +1044,7 @@ app.post("/api/v1/transactions", verifyToken, async (req, res) => {
         const allowedPaymentMethods = [
             "cash",
             "debit",
+            "credit_card",
             "qris",
             "transfer"
         ];
@@ -1420,6 +1421,7 @@ app.get("/api/v1/reports/sales", verifyToken, async (req, res) => {
             const allowedPaymentMethods = [
                 "cash",
                 "debit",
+                "credit_card",
                 "qris",
                 "transfer"
             ];
