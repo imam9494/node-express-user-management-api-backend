@@ -1457,16 +1457,53 @@ app.get("/api/v1/reports/sales", verifyToken, async (req, res) => {
             `
             SELECT
                 COUNT(*) AS total_transactions,
-                COALESCE(SUM(t.subtotal), 0) AS total_subtotal,
-                COALESCE(SUM(t.discount), 0) AS total_discount,
-                COALESCE(SUM(t.grand_total), 0) AS total_omzet,
-                COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
+                COALESCE(SUM(r.subtotal), 0) AS total_subtotal,
+                COALESCE(SUM(r.discount), 0) AS total_discount,
+                COALESCE(SUM(r.grand_total), 0) AS total_omzet,
+                COALESCE(SUM(r.total_hpp), 0) AS total_hpp,
                 COALESCE(
-                    SUM(t.grand_total - t.total_hpp),
+                    SUM(r.grand_total - r.total_hpp),
                     0
                 ) AS gross_profit
-            FROM transactions t
-            ${whereClause}
+            FROM (
+                SELECT
+                    t.id,
+                    t.user_id,
+                    t.payment_method,
+                    t.created_at,
+
+                    COALESCE(
+                        SUM(ti.subtotal),
+                        0
+                    ) AS subtotal,
+
+                    COALESCE(
+                        SUM(ti.discount),
+                        0
+                    ) AS discount,
+
+                    COALESCE(
+                        SUM(ti.subtotal - ti.discount),
+                        0
+                    ) AS grand_total,
+
+                    COALESCE(
+                        SUM(ti.quantity * ti.cost_price),
+                        0
+                    ) AS total_hpp
+
+                FROM transactions t
+
+                LEFT JOIN transaction_items ti
+                    ON ti.transaction_id = t.id
+
+                GROUP BY
+                    t.id,
+                    t.user_id,
+                    t.payment_method,
+                    t.created_at
+            ) r
+            ${whereClause.replace(/t\./g, "r.")}
             `,
             params
         );
@@ -1480,11 +1517,11 @@ app.get("/api/v1/reports/sales", verifyToken, async (req, res) => {
                 t.user_id,
                 u.name AS cashier_name,
                 u.email AS cashier_email,
-                t.subtotal,
-                t.discount,
-                t.grand_total,
-                t.total_hpp,
-                (t.grand_total - t.total_hpp) AS gross_profit,
+                r.subtotal,
+                r.discount,
+                r.grand_total,
+                r.total_hpp,
+                (r.grand_total - r.total_hpp) AS gross_profit,
                 t.paid_amount,
                 t.change_amount,
                 t.payment_method,
@@ -1492,6 +1529,35 @@ app.get("/api/v1/reports/sales", verifyToken, async (req, res) => {
             FROM transactions t
             INNER JOIN users u
                 ON t.user_id = u.id
+            INNER JOIN (
+                SELECT
+                    transaction_id,
+
+                    COALESCE(
+                        SUM(subtotal),
+                        0
+                    ) AS subtotal,
+
+                    COALESCE(
+                        SUM(discount),
+                        0
+                    ) AS discount,
+
+                    COALESCE(
+                        SUM(subtotal - discount),
+                        0
+                    ) AS grand_total,
+
+                    COALESCE(
+                        SUM(quantity * cost_price),
+                        0
+                    ) AS total_hpp
+
+                FROM transaction_items
+
+                GROUP BY transaction_id
+            ) r
+                ON r.transaction_id = t.id
             ${whereClause}
             ORDER BY t.created_at DESC
             `,
