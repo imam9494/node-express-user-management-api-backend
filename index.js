@@ -1672,24 +1672,10 @@ app.get("/api/v1/dashboard/sales-chart", verifyToken, async (req, res) => {
         // ==================== TENTUKAN RENTANG ====================
 
         if (period === "all") {
-            const [rows] = await db.query(`
-                SELECT
-                    DATE(t.created_at) AS date,
-                    COALESCE(SUM(t.grand_total), 0) AS total_omzet,
-                    COALESCE(SUM(t.total_hpp), 0) AS total_hpp,
-                    COALESCE(
-                        SUM(t.grand_total - t.total_hpp),
-                        0
-                    ) AS gross_profit
-                FROM transactions t
-                GROUP BY DATE(t.created_at)
-                ORDER BY DATE(t.created_at) ASC
-            `);
+            startDate = "(SELECT COALESCE(MIN(DATE(created_at)), CURDATE()) FROM transactions)";
+            endDate = "CURDATE()";
 
-            return res.json(rows);
-        }
-
-        if (period === "today") {
+        } else if (period === "today") {
             startDate = "CURDATE()";
             endDate = "CURDATE()";
 
